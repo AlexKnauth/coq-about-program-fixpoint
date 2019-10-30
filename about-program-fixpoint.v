@@ -70,3 +70,14 @@ Proof.
     fold_sub f2.
     reflexivity.
 Qed.
+
+Lemma f2_id x : f2 x = x.
+Proof.
+  induction x as [| x IHx].
+  - reflexivity.
+  - rewrite def_f2.
+    simpl.
+    rewrite Nat.sub_0_r.
+    rewrite IHx.
+    reflexivity.
+Qed.
