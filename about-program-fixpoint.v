@@ -1,7 +1,15 @@
-Require Import Arith.PeanoNat.
-Require Import Arith.EqNat.
-Require Import Arith.Wf_nat.
+Require Import mathcomp.ssreflect.all_ssreflect.
 Require Import Program.Wf.
+Set Bullet Behavior "Strict Subproofs".
+
+(* Transforms a coq_nat less-than into ssreflect's less-than *)
+Ltac leP_of_coq_nat :=
+  match goal with
+  | |- (_ < _)%coq_nat => apply/leP
+  | _                  => idtac
+  end.
+
+Obligation Tactic := Tactics.program_simpl; leP_of_coq_nat; try done.
 
 (* Example use of progdef, on a function `f` defined as a program fixpoint:
    Lemma def_f x : f x = <<body-of-f>>.
@@ -26,18 +34,18 @@ Program Fixpoint f1 (x : nat) {measure x} : nat :=
 
 Lemma def_f1 x : f1 x = match x with | 0 => 0 | S x' => S (f1 x') end.
 Proof.
-  destruct x.
-  - reflexivity.
-  - progdef f1. reflexivity.
+  case: x.
+  - done.
+  - move=> x'.
+    by progdef f1.
 Qed.
 
 Lemma f1_id x : f1 x = x.
 Proof.
-  induction x as [| x IHx].
-  - reflexivity.
-  - rewrite def_f1.
-    rewrite IHx.
-    reflexivity.
+  elim: x.
+  - done.
+  - move=> x' IHx'.
+    by rewrite def_f1 IHx'.
 Qed.
 
 (* ------------------------------------------------------ *)
@@ -45,70 +53,67 @@ Qed.
 (* Occurrence Typing / Logical Types for Untyped Languages / Flow Stuff *)
 Definition if_eq A c : (c = true -> A) -> (c = false -> A) -> A :=
   match c with
-  | true  => fun t _ => t eq_refl
-  | false => fun _ e => e eq_refl
+  | true  => fun t _ => t erefl
+  | false => fun _ e => e erefl
   end.
 Arguments if_eq {A} c t e.
 
 Program Fixpoint f2 (x : nat) {measure x} : nat :=
-  if_eq (x =? 0)
+  if_eq (x == 0)
         (fun xeq0 => 0)
         (fun xne0 => S (f2 (x - 1))).
 Next Obligation.
-  assert (x <> 0) as xne0'. { apply (beq_nat_false x 0 xne0). }
-  destruct x.
-  - contradiction.
-  - simpl. rewrite Nat.sub_0_r. apply le_n.
+  move: f2 => _.
+  case: x xne0.
+  - done.
+  - move=> x' _.
+    by rewrite subn1.
 Qed.
 
-Lemma def_f2 x : f2 x = if_eq (x =? 0) (fun xeq0 => 0) (fun xne0 => S (f2 (x - 1))).
+Lemma def_f2 x : f2 x = if_eq (x == 0) (fun xeq0 => 0) (fun xne0 => S (f2 (x - 1))).
 Proof.
-  destruct x.
-  - reflexivity.
-  - WfExtensionality.unfold_sub f2 (f2 (S x)).
+  case: x.
+  - done.
+  - move=> x.
+    WfExtensionality.unfold_sub f2 (f2 (S x)).
     simpl.
     fold_sub f2.
-    reflexivity.
+    done.
 Qed.
 
 Lemma f2_id x : f2 x = x.
 Proof.
-  induction x as [| x IHx].
-  - reflexivity.
-  - rewrite def_f2.
-    simpl.
-    rewrite Nat.sub_0_r.
-    rewrite IHx.
-    reflexivity.
+  elim: x.
+  - done.
+  - move=> x IHx.
+    by rewrite def_f2 subn1 IHx.
 Qed.
 
 (* ------------------------------------------------------ *)
 
 Definition collatz_next (x : nat) : nat :=
   if Nat.even x
-  then x / 2
+  then x./2
   else (3 * x) + 1.
 
 (* repeat until local minimum *)
 Program Fixpoint f3 (x : nat) {measure x} : nat :=
   let y := collatz_next x in
-  if_eq (y <? x)
+  if_eq (y < x)
         (fun yltx => f3 y)
         (fun _    => x).
-Next Obligation.
-  rewrite Nat.ltb_lt in yltx.
-  apply yltx.
+
+Lemma not_lt_3xp1x x : 3 * x + 1 < x = false.
+Proof.
+  apply/eqP.
+  by rewrite addn1 mulSn -2!addnS addKn.
 Qed.
 
 Lemma f3_not_even_id x : (Nat.even x = false) -> (f3 x = x).
 Proof.
-  intros oddx.
+  move=> oddx.
   WfExtensionality.unfold_sub f3 (f3 x).
   unfold collatz_next.
-  rewrite oddx.
-  assert (3 * x + 1 <? x = false) as ge3xp1. { (* TODO prove later *) admit. }
-  rewrite ge3xp1.
-  simpl.
-  reflexivity.
-Admitted.
+  by rewrite oddx not_lt_3xp1x.
+Qed.
 
