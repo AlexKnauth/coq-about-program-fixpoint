@@ -65,6 +65,8 @@ Lemma def_f2 x : f2 x = if_eq (x =? 0) (fun xeq0 => 0) (fun xne0 => S (f2 (x - 1
 Proof.
   destruct x.
   - reflexivity.
-  - try progdef f2.
-    (* Isn't working. Is if_eq too weird? *)
-Admitted.
+  - WfExtensionality.unfold_sub f2 (f2 (S x)).
+    simpl.
+    fold_sub f2.
+    reflexivity.
+Qed.
