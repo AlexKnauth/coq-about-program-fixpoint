@@ -81,3 +81,34 @@ Proof.
     rewrite IHx.
     reflexivity.
 Qed.
+
+(* ------------------------------------------------------ *)
+
+Definition collatz_next (x : nat) : nat :=
+  if Nat.even x
+  then x / 2
+  else (3 * x) + 1.
+
+(* repeat until local minimum *)
+Program Fixpoint f3 (x : nat) {measure x} : nat :=
+  let y := collatz_next x in
+  if_eq (y <? x)
+        (fun yltx => f3 y)
+        (fun _    => x).
+Next Obligation.
+  rewrite Nat.ltb_lt in yltx.
+  apply yltx.
+Qed.
+
+Lemma f3_not_even_id x : (Nat.even x = false) -> (f3 x = x).
+Proof.
+  intros oddx.
+  WfExtensionality.unfold_sub f3 (f3 x).
+  unfold collatz_next.
+  rewrite oddx.
+  assert (3 * x + 1 <? x = false) as ge3xp1. { (* TODO prove later *) admit. }
+  rewrite ge3xp1.
+  simpl.
+  reflexivity.
+Admitted.
+
