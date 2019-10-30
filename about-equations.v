@@ -1,5 +1,6 @@
 Require Import mathcomp.ssreflect.all_ssreflect.
-Require Import Program.Wf.
+From Equations Require Import Equations.
+Require Import Arith.Wf_nat.
 Set Bullet Behavior "Strict Subproofs".
 
 (* Transforms a coq_nat less-than into ssreflect's less-than *)
@@ -9,36 +10,20 @@ Ltac leP_of_coq_nat :=
   | _                  => idtac
   end.
 
-Obligation Tactic := Tactics.program_simpl; leP_of_coq_nat; try done.
-
-(* Example use of progdef, on a function `f` defined as a program fixpoint:
-   Lemma def_f x : f x = <<body-of-f>>.
-   Proof.
-     destruct x.
-     - reflexivity.
-     - progdef f. reflexivity.
-   Qed. *)
-Ltac progdef func :=
-  let x := fresh "x" in let f := fresh "f" in let g := fresh "g" in let Heq := fresh "Heq" in
-  unfold func; rewrite fix_sub_eq;
-  [ simpl; fold func
-  | intros x f g Heq; destruct x; [ reflexivity | f_equal; apply Heq ] ].
+Show Obligation Tactic.
+Obligation Tactic :=
+  Tactics.program_simplify; Tactics.equations_simpl;
+    try Tactics.program_solve_wf;
+    leP_of_coq_nat; try done.
 
 (* ------------------------------------------------------ *)
 
-Program Fixpoint f1 (x : nat) {measure x} : nat :=
-  match x with
-  | 0    => 0
-  | S x' => S (f1 x')
-  end.
+Equations f1 (x : nat) : nat by wf x lt :=
+  f1 0       := 0 ;
+  f1 (S xm1) := S (f1 xm1).
 
-Lemma def_f1 x : f1 x = match x with | 0 => 0 | S x' => S (f1 x') end.
-Proof.
-  case: x.
-  - done.
-  - move=> x'.
-    by progdef f1.
-Qed.
+Lemma def_f1 x : f1 x = match x with | 0 => 0 | S xm1 => S (f1 xm1) end.
+Proof. by apply: f1_unfold_eq. Qed.
 
 Lemma f1_id x : f1 x = x.
 Proof.
@@ -58,10 +43,10 @@ Definition if_eq A c : (c = true -> A) -> (c = false -> A) -> A :=
   end.
 Arguments if_eq {A} c t e.
 
-Program Fixpoint f2 (x : nat) {measure x} : nat :=
-  if_eq (x == 0)
-        (fun xeq0 => 0)
-        (fun xne0 => S (f2 (x - 1))).
+Equations f2 (x : nat) : nat by wf x lt :=
+  f2 x := if_eq (x == 0)
+                (fun xeq0 => 0)
+                (fun xne0 => S (f2 (x - 1))).
 Next Obligation.
   move: f2 => _.
   case: x xne0.
@@ -71,15 +56,7 @@ Next Obligation.
 Qed.
 
 Lemma def_f2 x : f2 x = if_eq (x == 0) (fun xeq0 => 0) (fun xne0 => S (f2 (x - 1))).
-Proof.
-  case: x.
-  - done.
-  - move=> x.
-    WfExtensionality.unfold_sub f2 (f2 (S x)).
-    simpl.
-    fold_sub f2.
-    done.
-Qed.
+Proof. by apply: f2_unfold_eq. Qed.
 
 Lemma f2_id x : f2 x = x.
 Proof.
@@ -97,7 +74,9 @@ Definition collatz_next (x : nat) : nat :=
   else (3 * x) + 1.
 
 (* repeat until local minimum *)
-Program Fixpoint f3 (x : nat) {measure x} : nat :=
+Equations f3 (x : nat) : nat by wf x lt :=
+  f3 x
+  :=
   let y := collatz_next x in
   if_eq (y < x)
         (fun yltx => f3 y)
@@ -112,7 +91,7 @@ Qed.
 Lemma f3_not_even_id x : (Nat.even x = false) -> (f3 x = x).
 Proof.
   move=> oddx.
-  WfExtensionality.unfold_sub f3 (f3 x).
+  rewrite f3_equation_1.
   unfold collatz_next.
   by rewrite oddx not_lt_3xp1x.
 Qed.
@@ -120,17 +99,40 @@ Qed.
 (* ------------------------------------------------------ *)
 
 (* repeat until local minimum, generic *)
-Program Fixpoint
-  repeat_while_smaller A (size : A -> nat) (f : A -> A) (a : A) {measure (size a)} : A
+Equations repeat_while_smaller A (size : A -> nat) (f : A -> A) (a : A) : A by wf (size a) lt :=
+  repeat_while_smaller A size f a
   :=
   let b := f a in
   if_eq (size b < size a)
         (fun blta => repeat_while_smaller A size f b)
-        (fun _    => a).
+        (fun nlt  => a).
+
+Lemma repeat_while_smaller_ind :
+  forall (A : Set) (size : A -> nat) (P : A -> Prop),
+    (forall (a : A),
+        (forall (b : A), (size b < size a) -> P b)
+        ->
+        P a)
+    ->
+    (forall (a : A), P a).
+Proof.
+  move=> A size P H a.
+  apply:
+    (lt_wf_ind
+       (size a)
+       (fun (sa : nat) => forall (a : A), (sa = size a) -> (P a))).
+  - move=> sa IHa a' Heqsa.
+    apply: (H a').
+    move=> b blta.
+    move/ltP in blta.
+    rewrite -Heqsa in blta.
+    by apply: (IHa (size b) blta b erefl).
+  - done.
+Qed.
 
 Lemma repeat_while_smaller_preserves_reflexive_transitive :
   forall
-    A
+    (A : Set)
     (R : A -> A -> Prop)
     (Rrefl : forall a, R a a)
     (Rtrans : forall a b c, R a b -> R b c -> R a c)
@@ -140,10 +142,14 @@ Lemma repeat_while_smaller_preserves_reflexive_transitive :
     (* --------------------- *)
     forall a, R a (repeat_while_smaller A size step1 a).
 Proof.
-  move=> A R Rrefl Rtrans size step1 Rstep1 a.
-  try WfExtensionality.unfold_sub repeat_while_smaller (repeat_while_smaller A size step1 a).
-  (* TODO: Figure out how to unfold this *)
-  (* This can be solved using the `Equations` package instead of `Program Fixpoint`,
-     see the `about-equations.v` file and the
-     repeat_while_smaller_preserves_reflexive_transitive lemma there. *)
-Admitted.
+  move=> A R Rrefl Rtrans size step1 Rstep1.
+  apply: (repeat_while_smaller_ind A size (fun a => R a (repeat_while_smaller A size step1 a))).
+  - move=> a IHa.
+    rewrite repeat_while_smaller_equation_1.
+    remember (step1 a) as b => //=.
+    case blta: (size b < size a) => //=.
+    apply: Rtrans.
+    + by apply: Rstep1.
+    + rewrite -Heqb.
+      by apply: IHa.
+Qed.
