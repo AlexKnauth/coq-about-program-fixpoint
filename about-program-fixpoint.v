@@ -117,3 +117,30 @@ Proof.
   by rewrite oddx not_lt_3xp1x.
 Qed.
 
+(* ------------------------------------------------------ *)
+
+(* repeat until local minimum, generic *)
+Program Fixpoint
+  repeat_while_smaller A (size : A -> nat) (f : A -> A) (a : A) {measure (size a)} : A
+  :=
+  let b := f a in
+  if_eq (size b < size a)
+        (fun blta => repeat_while_smaller A size f b)
+        (fun _    => a).
+
+Lemma repeat_while_smaller_preserves_reflexive_transitive :
+  forall
+    A
+    (R : A -> A -> Prop)
+    (Rrefl : forall a, R a a)
+    (Rtrans : forall a b c, R a b -> R b c -> R a c)
+    (size : A -> nat)
+    (step1 : A -> A)
+    (Rstep1 : forall a, R a (step1 a)),
+    (* --------------------- *)
+    forall a, R a (repeat_while_smaller A size step1 a).
+Proof.
+  move=> A R Rrefl Rtrans size step1 Rstep1 a.
+  try WfExtensionality.unfold_sub repeat_while_smaller (repeat_while_smaller A size step1 a).
+  (* TODO: Figure out how to unfold this *)
+Admitted.
