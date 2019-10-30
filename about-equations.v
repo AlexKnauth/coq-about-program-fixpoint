@@ -109,10 +109,7 @@ Equations repeat_while_smaller A (size : A -> nat) (f : A -> A) (a : A) : A by w
 
 Lemma repeat_while_smaller_ind :
   forall (A : Set) (size : A -> nat) (P : A -> Prop),
-    (forall (a : A),
-        (forall (b : A), (size b < size a) -> P b)
-        ->
-        P a)
+    (forall (a : A) (IHa : forall (b : A), (size b < size a) -> P b), P a)
     ->
     (forall (a : A), P a).
 Proof.
@@ -142,10 +139,9 @@ Lemma repeat_while_smaller_preserves_reflexive_transitive :
     (* --------------------- *)
     forall a, R a (repeat_while_smaller A size step1 a).
 Proof.
-  move=> A R Rrefl Rtrans size step1 Rstep1.
-  apply: (repeat_while_smaller_ind A size (fun a => R a (repeat_while_smaller A size step1 a))).
-  - move=> a IHa.
-    rewrite repeat_while_smaller_equation_1.
+  move=> A R Rrefl Rtrans size step1 Rstep1 a.
+  induction a using (repeat_while_smaller_ind A size).
+  - rewrite repeat_while_smaller_equation_1.
     remember (step1 a) as b => //=.
     case blta: (size b < size a) => //=.
     apply: Rtrans.
